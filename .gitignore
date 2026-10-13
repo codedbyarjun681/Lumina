@@ -1,0 +1,82 @@
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+venv/
+env/
+
+# ==========================
+# Environment Variables
+# ==========================
+.env
+.env.*
+!.env.example
+
+# ==========================
+# Python Databases
+# ==========================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==========================
+# ChromaDB
+# ==========================
+backend/chroma_db/
+
+# ==========================
+# Uploaded Documents
+# ==========================
+backend/documents/
+
+# ==========================
+# Node
+# ==========================
+node_modules/
+npm-debug.log*
+
+# ==========================
+# Vite
+# ==========================
+dist/
+
+# ==========================
+# Tauri
+# ==========================
+target/
+
+# ==========================
+# IDE
+# ==========================
+.idea/
+
+# Keep VS Code settings
+!.vscode/
+!.vscode/settings.json
+
+# ==========================
+# OS
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# Future Local Data
+# ==========================
+backend/logs/
+backend/cache/
+backend/tmp/
+backend/uploads/
+
+# Python caches
+.pytest_cache/
+.mypy_cache/
+
+# Coverage
+.coverage
+htmlcov/

@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+sqlalchemy
+python-multipart
+langchain
+langchain-community
+langchain-text-splitters
+langchain-ollama
+langchain-openai
+chromadb
+sentence-transformers
+pypdf
+docx2txt
+unstructured
+python-dotenv
