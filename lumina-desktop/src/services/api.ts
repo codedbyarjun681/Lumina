@@ -112,6 +112,31 @@ export const api = {
     return request<void>(`/workspaces/${id}`, { method: "DELETE" });
   },
 
+  async exportWorkspace(id: string, name: string): Promise<void> {
+    const res = await fetch(`${BASE_URL}/workspaces/${id}/export`);
+    if (!res.ok) {
+      throw new Error(`Export failed with status ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `lumina-${name || "workspace"}.zip`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  importWorkspace(file: File): Promise<Workspace> {
+    const form = new FormData();
+    form.append("file", file);
+    return request<Workspace>("/workspaces/import", {
+      method: "POST",
+      body: form,
+    });
+  },
+
   async uploadFile(workspaceId: string, file: File): Promise<void> {
     const form = new FormData();
     form.append("workspace_id", workspaceId);
@@ -136,6 +161,105 @@ export const api = {
         conversation_id: conversationId,
       }),
     });
+  },
+
+  // ——— Agentic streaming ask ———
+
+  async askStream(
+    question: string,
+    workspaceId: string,
+    conversationId: string,
+    handlers: {
+      onStep?: (label: string) => void;
+      onAgent?: (agent: string, agentLabel: string) => void;
+      onFinal?: (result: AskResult & { agent?: string; agent_label?: string }) => void;
+      onError?: (status: number, detail: string) => void;
+    },
+  ): Promise<void> {
+    const res = await fetch(
+      `${BASE_URL}/workspaces/${workspaceId}/agent/ask`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          conversation_id: conversationId,
+        }),
+      },
+    );
+
+    if (!res.ok || !res.body) {
+      let detail = `Request failed with status ${res.status}`;
+      try {
+        const body: unknown = await res.json();
+        if (
+          typeof body === "object" &&
+          body !== null &&
+          "detail" in body &&
+          typeof (body as { detail: unknown }).detail === "string"
+        ) {
+          detail = (body as { detail: string }).detail;
+        }
+      } catch {
+        // non-JSON error body
+      }
+      handlers.onError?.(res.status, detail);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      let separator = buffer.indexOf("\n\n");
+      while (separator !== -1) {
+        const chunk = buffer.slice(0, separator);
+        buffer = buffer.slice(separator + 2);
+        separator = buffer.indexOf("\n\n");
+        for (const line of chunk.split("\n")) {
+          if (!line.startsWith("data:")) {
+            continue;
+          }
+          const event: {
+            event: string;
+            label?: string;
+            agent?: string;
+            agent_label?: string;
+            status?: number;
+            detail?: string;
+            response?: string;
+            sources?: Array<{ original_filename: string; excerpt: string }>;
+            conversation_name?: string;
+            user_message_id?: string;
+            assistant_message_id?: string;
+          } = JSON.parse(line.slice(5).trim());
+
+          if (event.event === "step" && event.label) {
+            handlers.onStep?.(event.label);
+          } else if (event.event === "agent") {
+            handlers.onAgent?.(event.agent ?? "", event.agent_label ?? "");
+          } else if (event.event === "final") {
+            handlers.onFinal?.({
+              response: event.response ?? "",
+              sources: event.sources,
+              conversation_name: event.conversation_name,
+              user_message_id: event.user_message_id,
+              assistant_message_id: event.assistant_message_id,
+              agent: event.agent,
+              agent_label: event.agent_label,
+            });
+          } else if (event.event === "error") {
+            handlers.onError?.(event.status ?? 500, event.detail ?? "Unknown error");
+          }
+        }
+      }
+    }
   },
 
   async uploadBatch(
@@ -321,6 +445,45 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(prefs),
     });
+  },
+
+  async exportConversation(
+    conversationId: string,
+    name: string,
+    format: "md" | "pdf",
+  ): Promise<void> {
+    const res = await fetch(
+      `${BASE_URL}/conversations/${conversationId}/export?format=${format}`,
+    );
+    if (!res.ok) {
+      let detail = `Export failed with status ${res.status}`;
+      try {
+        const body: unknown = await res.json();
+        if (
+          typeof body === "object" &&
+          body !== null &&
+          "detail" in body &&
+          typeof (body as { detail: unknown }).detail === "string"
+        ) {
+          detail = (body as { detail: string }).detail;
+        }
+      } catch {
+        // non-JSON body
+      }
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    const safe =
+      (name || "conversation").replace(/[^\w\- ]+/g, "_").slice(0, 60) ||
+      "conversation";
+    anchor.download = `${safe}.${format}`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   },
 
   deleteMessagesFrom(conversationId: string, messageId: string): Promise<{ deleted: number }> {

@@ -31,9 +31,10 @@ function formatUploadDate(iso: string): string {
 
 interface WorkspaceRowProps {
   workspace: Workspace;
+  onExport: (workspace: Workspace) => void;
 }
 
-function WorkspaceRow({ workspace }: WorkspaceRowProps) {
+function WorkspaceRow({ workspace, onExport }: WorkspaceRowProps) {
   const renameWorkspace = useWorkspaceStore((s) => s.renameWorkspace);
   const deleteWorkspace = useWorkspaceStore((s) => s.deleteWorkspace);
   const [nameDraft, setNameDraft] = useState(workspace.name);
@@ -69,6 +70,14 @@ function WorkspaceRow({ workspace }: WorkspaceRowProps) {
           disabled={!nameChanged || saving}
         >
           Rename
+        </button>
+        <button
+          type="button"
+          className="btn btn--secondary"
+          title="Export workspace archive (share/backup)"
+          onClick={() => onExport(workspace)}
+        >
+          Export
         </button>
         <button
           type="button"
@@ -191,6 +200,7 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatSessionRef = useRef<ChatSessionHandle>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   // ——— Sidebar collapse ———
 
@@ -673,12 +683,47 @@ export default function App() {
               Create
             </button>
           </div>
+          <div className="workspace-row-line" style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              title="Import a Lumina workspace archive (.zip)"
+              onClick={() => importInputRef.current?.click()}
+            >
+              Import workspace…
+            </button>
+          </div>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".zip"
+            className="visually-hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                void (async () => {
+                  try {
+                    const ws = await api.importWorkspace(file);
+                    await useWorkspaceStore.getState().loadWorkspaces();
+                    useWorkspaceStore.getState().setActiveWorkspace(ws.id);
+                  } catch {
+                    // import failed — archive invalid
+                  }
+                })();
+              }
+              e.target.value = "";
+            }}
+          />
           <div style={{ marginTop: 12 }}>
             {workspaces.length === 0 && (
               <p className="panel-muted">No workspaces yet.</p>
             )}
             {workspaces.map((workspace) => (
-              <WorkspaceRow key={workspace.id} workspace={workspace} />
+              <WorkspaceRow
+                key={workspace.id}
+                workspace={workspace}
+                onExport={(ws) => void api.exportWorkspace(ws.id, ws.name)}
+              />
             ))}
           </div>
         </div>

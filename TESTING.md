@@ -339,3 +339,64 @@
 
 **Action taken:**
 - Implemented fully (backend + frontend); `npm run build` + `npx eslint` clean
+
+## FEATURE Agentic Phase 1 — router + Tutor/Quiz agents with SSE streaming
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-05
+
+**What was checked:**
+- No agentic code existed before this build
+
+**Test results:**
+- Backend: `agents/` package (router with keyword→LLM→fallback classification, `@teacher`/`@quiz` force mentions; Tutor agent reusing RAG retrieval + tutor prompt; Quiz Master agent wrapping quiz_service with word/digit count + difficulty parsing); `rag.py` refactored to share `retrieve_with_sources`/`build_tutor_prompt` with zero `/ask` behaviour change; new SSE route `POST /workspaces/{id}/agent/ask` (worker thread → asyncio.Queue → StreamingResponse; errors stream as clean `error` events; persistence + auto-title + memory extraction identical to `/ask`)
+- Live verified (real OpenRouter models): LLM-routed tutor answer (with sources + ids + auto-title) ✓; keyword-routed quiz (count=2 parsed) ✓; `@teacher` force with mention stripping ✓; `@quiz` force skips router step and parses "one easy question" → 1 question/easy ✓; discontinued-model 404 surfaced as a friendly SSE error ✓
+- Frontend: `api.askStream` SSE reader (fetch stays on the api object), live step-list progress with pulsing current step, agent badge on assistant bubbles ("Tutor"/"Quiz Master"), rate-limit/unreachable errors rendered as chat messages; `npm run build` + `npx eslint` clean
+- Test conversations cleaned up afterwards
+
+**Issues found:**
+- Conversation created before a global-default change kept its stale inherited model — expected resolution-chain behaviour, resolved by the per-conversation picker
+- Word-numbers ("one"…"ten") not parsed initially — fixed
+
+**Action taken:**
+- Implemented fully; documented in AGENTIC-PHASE1.md
+
+## FEATURE-1+2 Workspace export / import (backup + share)
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**What was checked:**
+- No backup or sharing capability existed
+
+**Test results:**
+- New `services/backup_service.py`: export builds an in-memory zip (`workspace.json` + raw `documents/`); ChromaDB deliberately excluded — it is a derived index, rebuilt on import (archives stay portable across machines/Chroma versions)
+- `GET /workspaces/{id}/export` — live: exported real "ML Ops" workspace → 200, 3.7 KB zip containing workspace.json + cell_biology PDF; JSON verified: 3 conversations / 18 messages / 12 memory entries / 1 document ✓
+- `POST /workspaces/import` — live: re-imported the archive → new workspace with all conversations (renamed titles intact), documents (fresh UUID filenames), 12 memory entries; Chroma collection re-embedded (1 chunk); content search on the imported workspace returns `cell_biology.pdf` ✓
+- Invalid archive → clean `400 Not a valid Lumina workspace archive` ✓ (initially 500 — fixed by catching `zipfile.BadZipFile`)
+- Frontend: Settings → Workspaces gained an "Export" button per workspace (blob download) and "Import workspace…" (hidden file input); api.ts gained `exportWorkspace`/`importWorkspace`. Build + lint clean
+
+**Issues found:**
+- Missing `Response`/`File`/`zipfile` imports after edits — fixed during test round
+
+**Action taken:**
+- Implemented fully; test-imported workspace deleted afterwards
+
+## FEATURE-3 Conversation export (Markdown / PDF)
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**Test results:**
+- New `services/export_conversation.py` + route `GET /conversations/{id}/export?format=md|pdf`
+- Live: MD export → 200, 3.4 KB, correct "# title / **You**: / **Lumina**:" structure ✓
+- Live: PDF export → 200, valid PDF 1.3, 3 pages (fpdf2; DejaVu font when present, latin-1 sanitize fallback otherwise) ✓
+- Empty conversation → clean 400 "Nothing to export" ✓
+- Frontend: conversation hover actions gained ⤓ (Markdown) and ⎙ (PDF) download buttons; `api.exportConversation` blob-download
+- `fpdf2` added to requirements.txt
+
+**Issues found:**
+- fpdf2 ≥2.5 `multi_cell` defaults `new_x=RIGHT`, leaving the cursor at the right margin → next full-width cell gets ~zero width ("Not enough horizontal space") — fixed by passing `new_x=LMARGIN, new_y=NEXT` on every cell (root-caused via minimal repro)
+
+**Action taken:**
+- Implemented fully; build + lint clean

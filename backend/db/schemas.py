@@ -127,6 +127,35 @@ class ApiKeyUpdate(BaseModel):
     api_key: str = Field(min_length=1)
 
 
+class QuizAttemptCreate(BaseModel):
+    score: int = Field(ge=0)
+    total: int = Field(ge=1)
+
+
+class QuizOut(BaseModel):
+    id: str
+    workspace_id: str
+    difficulty: str
+    num_questions: int
+    created_at: datetime
+    best_score: int | None = None
+    last_score: int | None = None
+    attempts: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QuizDetailOut(BaseModel):
+    id: str
+    workspace_id: str
+    difficulty: str
+    created_at: datetime
+    questions: list[dict]
+    best_score: int | None = None
+    last_score: int | None = None
+    attempts: int = 0
+
+
 class PreferencesUpdate(BaseModel):
     theme: str | None = Field(default=None, min_length=1, max_length=20)
     colorway: str | None = Field(default=None, min_length=1, max_length=50)

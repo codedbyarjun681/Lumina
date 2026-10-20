@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db.database import init_db
 from routes import (
+    agent,
     chat,
     conversations,
     documents,
@@ -46,6 +47,7 @@ app.include_router(settings.router)
 app.include_router(models.router)
 app.include_router(providers.router)
 app.include_router(quiz.router)
+app.include_router(agent.router)
 
 
 @app.get("/")

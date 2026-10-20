@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useWorkspaceStore } from "../store/workspaceStore";
 import { useConversationStore } from "../store/conversationStore";
+import { api } from "../services/api";
 
 interface SidebarProps {
   onUploadClick: () => void;
@@ -177,6 +178,38 @@ export default function Sidebar({
                                     }
                                   >
                                     ✎
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="sidebar-icon-btn"
+                                    title="Export as Markdown"
+                                    onClick={() =>
+                                      void api
+                                        .exportConversation(
+                                          conversation.id,
+                                          conversation.name,
+                                          "md",
+                                        )
+                                        .catch(() => undefined)
+                                    }
+                                  >
+                                    ⤓
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="sidebar-icon-btn"
+                                    title="Export as PDF"
+                                    onClick={() =>
+                                      void api
+                                        .exportConversation(
+                                          conversation.id,
+                                          conversation.name,
+                                          "pdf",
+                                        )
+                                        .catch(() => undefined)
+                                    }
+                                  >
+                                    ⎙
                                   </button>
                                   <button
                                     type="button"

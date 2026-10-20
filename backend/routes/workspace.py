@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import zipfile
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -10,7 +13,7 @@ from db.schemas import (
     WorkspaceOut,
     WorkspaceUpdate,
 )
-from services import workspace_service
+from services import backup_service, workspace_service
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -73,4 +76,38 @@ def delete_workspace(workspace_id: str, db: Session = Depends(get_db)) -> None:
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
+        )
+
+
+@router.get("/{workspace_id}/export")
+def export_workspace(workspace_id: str, db: Session = Depends(get_db)) -> Response:
+    workspace = workspace_service.get_workspace(db, workspace_id)
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
+        )
+    archive = backup_service.export_workspace(db, workspace)
+    safe_name = "".join(c if c.isalnum() or c in "-_ " else "_" for c in workspace.name)
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="lumina-{safe_name or "workspace"}.zip"'
+            )
+        },
+    )
+
+
+@router.post("/import", response_model=WorkspaceOut, status_code=status.HTTP_201_CREATED)
+async def import_workspace(
+    file: UploadFile = File(...), db: Session = Depends(get_db)
+) -> WorkspaceOut:
+    archive = await file.read()
+    try:
+        return backup_service.import_workspace(db, archive)
+    except (KeyError, ValueError, zipfile.BadZipFile) as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Not a valid Lumina workspace archive: {e}",
         )

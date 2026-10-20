@@ -30,12 +30,14 @@ function SourcesSection({ sources }: { sources: MessageSource[] }) {
 interface ChatAreaProps {
   messages: Message[];
   loading: boolean;
+  agentSteps: string[];
   onEditMessage: (messageId: string, newContent: string) => void;
 }
 
 export default function ChatArea({
   messages,
   loading,
+  agentSteps,
   onEditMessage,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -168,6 +170,9 @@ export default function ChatArea({
                       : "chat-bubble chat-bubble--assistant markdown-body"
                   }
                 >
+                  {!isUser && message.agent && (
+                    <span className="agent-badge">{message.agent}</span>
+                  )}
                   {isUser ? (
                     message.content
                   ) : (
@@ -192,7 +197,25 @@ export default function ChatArea({
               </div>
             );
           })}
-          {loading && (
+          {loading && agentSteps.length > 0 && (
+            <div className="chat-row chat-row--assistant">
+              <div className="chat-bubble chat-bubble--assistant agent-progress">
+                {agentSteps.map((step, i) => (
+                  <span
+                    key={i}
+                    className={
+                      i === agentSteps.length - 1
+                        ? "agent-progress-step agent-progress-step--active"
+                        : "agent-progress-step"
+                    }
+                  >
+                    ⏺ {step}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {loading && agentSteps.length === 0 && (
             <div className="chat-row chat-row--assistant">
               <div className="chat-bubble chat-bubble--assistant chat-bubble--loading">
                 <span className="loading-dot" />

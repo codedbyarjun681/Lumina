@@ -10,6 +10,8 @@ from db.models import (
     Conversation,
     ConversationMessage,
     Provider,
+    Quiz,
+    QuizAttempt,
     Workspace,
     WorkspaceDocument,
     WorkspaceMemory,
@@ -269,6 +271,66 @@ def search_documents_by_filename(
         .order_by(WorkspaceDocument.uploaded_at.desc())
     )
     return db.execute(stmt).scalars().all()
+
+
+# ——— Quizzes & attempts ———
+
+
+def create_quiz(
+    db: Session, workspace_id: str, questions_json: str, difficulty: str
+) -> Quiz:
+    quiz = Quiz(
+        workspace_id=workspace_id,
+        questions_json=questions_json,
+        difficulty=difficulty,
+    )
+    db.add(quiz)
+    db.commit()
+    db.refresh(quiz)
+    return quiz
+
+
+def get_quiz(db: Session, quiz_id: str) -> Quiz | None:
+    return db.get(Quiz, quiz_id)
+
+
+def list_quizzes(db: Session, workspace_id: str) -> Sequence[Quiz]:
+    stmt = (
+        select(Quiz)
+        .where(Quiz.workspace_id == workspace_id)
+        .order_by(Quiz.created_at.desc())
+    )
+    return db.execute(stmt).scalars().all()
+
+
+def list_attempts(db: Session, quiz_id: str) -> Sequence[QuizAttempt]:
+    stmt = (
+        select(QuizAttempt)
+        .where(QuizAttempt.quiz_id == quiz_id)
+        .order_by(QuizAttempt.created_at.desc())
+    )
+    return db.execute(stmt).scalars().all()
+
+
+def add_attempt(
+    db: Session, quiz_id: str, score: int, total: int
+) -> QuizAttempt:
+    attempt = QuizAttempt(quiz_id=quiz_id, score=score, total=total)
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+    return attempt
+
+
+def delete_quiz(db: Session, quiz_id: str) -> bool:
+    quiz = get_quiz(db, quiz_id)
+    if quiz is None:
+        return False
+    for attempt in list_attempts(db, quiz_id):
+        db.delete(attempt)
+    db.delete(quiz)
+    db.commit()
+    return True
 
 
 # ——— Workspace memory ———

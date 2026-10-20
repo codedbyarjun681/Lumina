@@ -140,32 +140,18 @@ def _format_history(conversation_history: list[dict] | None) -> str | None:
     return "\n".join(lines)
 
 
-def ask_lumina(
-    query: str,
-    workspace_id: str,
-    provider: str = "ollama",
-    model: str = "qwen3:8b",
-    api_key: str | None = None,
-    memory_entries: list[str] | None = None,
-    conversation_history: list[dict] | None = None,
-    db=None,
-) -> dict:
+def retrieve_with_sources(
+    query: str, workspace_id: str, db=None, k: int = 3
+) -> tuple[list, list[dict]]:
+    """Retrieve the top-k chunks for a workspace and map them to their source
+    documents (deduplicated, first/closest chunk wins per file)."""
     store = Chroma(
         collection_name=workspace_id,
         persist_directory=CHROMA_ROOT_STR,
         embedding_function=get_embedding(),
     )
-    retriever = store.as_retriever(search_kwargs={"k": 3})
+    docs = store.as_retriever(search_kwargs={"k": k}).invoke(query)
 
-    docs = retriever.invoke(query)
-    context = (
-        "\n\n".join(doc.page_content for doc in docs)
-        if docs
-        else "No relevant documents found."
-    )
-
-    # Map retrieved chunks back to their source documents (deduplicated,
-    # first/closest chunk wins per file)
     sources: list[dict] = []
     if db is not None:
         from db import crud
@@ -185,7 +171,15 @@ def ask_lumina(
                     "excerpt": chunk.page_content[:150],
                 }
             )
+    return docs, sources
 
+
+def build_tutor_prompt(
+    query: str,
+    context: str,
+    memory_entries: list[str] | None,
+    conversation_history: list[dict] | None,
+) -> str:
     memory_block = _format_memory(memory_entries)
     history_block = _format_history(conversation_history)
 
@@ -197,7 +191,7 @@ Recent conversation:
 
 """
 
-    prompt = f"""You are Lumina, a personalized AI tutor.
+    return f"""You are Lumina, a personalized AI tutor.
 
 What you know about this user:
 {memory_block}
@@ -210,6 +204,25 @@ User's question:
 
 Answer:
 """
+
+
+def ask_lumina(
+    query: str,
+    workspace_id: str,
+    provider: str = "ollama",
+    model: str = "qwen3:8b",
+    api_key: str | None = None,
+    memory_entries: list[str] | None = None,
+    conversation_history: list[dict] | None = None,
+    db=None,
+) -> dict:
+    docs, sources = retrieve_with_sources(query, workspace_id, db)
+    context = (
+        "\n\n".join(doc.page_content for doc in docs)
+        if docs
+        else "No relevant documents found."
+    )
+    prompt = build_tutor_prompt(query, context, memory_entries, conversation_history)
     llm = _get_llm(provider, model, api_key)
     return {
         "answer": _llm_text(llm, prompt, provider, model),

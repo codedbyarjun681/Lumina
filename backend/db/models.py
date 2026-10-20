@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.database import Base
@@ -109,6 +109,32 @@ class Provider(Base):
 
     def __repr__(self) -> str:
         return f"<Provider id={self.id!r} kind={self.kind!r}>"
+
+
+class Quiz(Base):
+    __tablename__ = "quizzes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    questions_json: Mapped[str] = mapped_column(Text, nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<Quiz id={self.id!r} difficulty={self.difficulty!r}>"
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    quiz_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    score: Mapped[int] = mapped_column(nullable=False)
+    total: Mapped[int] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<QuizAttempt quiz={self.quiz_id!r} {self.score}/{self.total}>"
 
 
 class AppSetting(Base):

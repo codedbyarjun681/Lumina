@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -14,6 +14,7 @@ from db.schemas import (
     ConversationRename,
 )
 from services import conversation_service, workspace_service
+from services.export_conversation import to_markdown, to_pdf
 
 router = APIRouter(tags=["conversations"])
 
@@ -145,6 +146,50 @@ def delete_messages_from(
             detail="Message not found in this conversation",
         )
     return {"deleted": deleted}
+
+
+@router.get(
+    "/conversations/{conversation_id}/export",
+)
+def export_conversation(
+    conversation_id: str,
+    format: str = Query(default="md", pattern="^(md|pdf)$"),
+    db: Session = Depends(get_db),
+) -> Response:
+    conversation = _get_conversation_or_404(db, conversation_id)
+    messages = conversation_service.list_messages(db, conversation_id)
+    if not messages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nothing to export — the conversation is empty",
+        )
+
+    safe_name = "".join(
+        c if c.isalnum() or c in "-_ " else "_" for c in conversation.name
+    )[:60]
+
+    if format == "md":
+        content = to_markdown(conversation.name, messages)
+        return Response(
+            content=content,
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{safe_name or "conversation"}.md"'
+                )
+            },
+        )
+
+    content = to_pdf(conversation.name, messages)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{safe_name or "conversation"}.pdf"'
+            )
+        },
+    )
 
 
 @router.get(

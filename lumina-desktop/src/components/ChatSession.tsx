@@ -31,6 +31,7 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+    const [agentSteps, setAgentSteps] = useState<string[]>([]);
 
     // Load persisted history on mount (component remounts per conversation
     // because App renders it with key={conversationId})
@@ -89,7 +90,7 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
     };
 
     // Shared ask flow: the caller has already pushed the user message to the
-    // UI (optimistic). The backend persists both messages and returns ids.
+    // UI (optimistic). Streams agent progress; backend persists both messages.
     const sendQuestion = async (question: string) => {
       const activeWorkspace = requireWorkspace();
       const activeConversation = requireConversation();
@@ -98,39 +99,57 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
       }
 
       setLoading(true);
+      setAgentSteps([]);
       try {
-        const result = await api.ask(
-          question,
-          activeWorkspace,
-          activeConversation,
-        );
-        // Attach the backend's id to the optimistic user message
-        if (result.user_message_id) {
-          setMessages((prev) => {
-            const next = [...prev];
-            for (let i = next.length - 1; i >= 0; i--) {
-              if (next[i].role === "user" && next[i].id === undefined) {
-                next[i] = { ...next[i], id: result.user_message_id };
-                break;
-              }
+        await api.askStream(question, activeWorkspace, activeConversation, {
+          onStep: (label) => setAgentSteps((prev) => [...prev, label]),
+          onAgent: () => undefined,
+          onFinal: (result) => {
+            setAgentSteps([]);
+            if (result.user_message_id) {
+              setMessages((prev) => {
+                const next = [...prev];
+                for (let i = next.length - 1; i >= 0; i--) {
+                  if (next[i].role === "user" && next[i].id === undefined) {
+                    next[i] = { ...next[i], id: result.user_message_id };
+                    break;
+                  }
+                }
+                return next;
+              });
             }
-            return next;
-          });
-        }
-        pushMessage({
-          id: result.assistant_message_id,
-          role: "assistant",
-          content: result.response,
-          sources: result.sources && result.sources.length > 0
-            ? result.sources
-            : undefined,
+            pushMessage({
+              id: result.assistant_message_id,
+              role: "assistant",
+              content: result.response,
+              agent: result.agent_label,
+              sources:
+                result.sources && result.sources.length > 0
+                  ? result.sources
+                  : undefined,
+            });
+            if (result.conversation_name) {
+              useConversationStore
+                .getState()
+                .applyConversationName(
+                  activeConversation,
+                  result.conversation_name,
+                );
+            }
+          },
+          onError: (status, detail) => {
+            setAgentSteps([]);
+            pushMessage({
+              role: "assistant",
+              content:
+                status === 503 || status === 409 || status === 429
+                  ? `The model is busy or unreachable — ${detail}`
+                  : `Something went wrong: ${detail}`,
+            });
+          },
         });
-        if (result.conversation_name) {
-          useConversationStore
-            .getState()
-            .applyConversationName(activeConversation, result.conversation_name);
-        }
       } catch (error) {
+        setAgentSteps([]);
         pushMessage({
           role: "assistant",
           content:
@@ -291,6 +310,7 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
           <ChatArea
             messages={messages}
             loading={loading}
+            agentSteps={agentSteps}
             onEditMessage={handleEditMessage}
           />
           <div className="chat-compose">
