@@ -1,7 +1,12 @@
 import type { Workspace } from "../types/Workspace";
 import type { Conversation, ConversationMessage } from "../types/Conversation";
 import type { MemoryEntry } from "../types/Memory";
-import type { QuizResult } from "../types/Quiz";
+import type {
+  QuizQuestion,
+  QuizResult,
+  QuizSummary,
+  QuizDetail,
+} from "../types/Quiz";
 import type {
   BatchUploadResult,
   DocumentSearchResult,
@@ -128,6 +133,14 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  reorderWorkspaces(ids: string[]): Promise<void> {
+    return request<void>("/workspaces/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+  },
+
   importWorkspace(file: File): Promise<Workspace> {
     const form = new FormData();
     form.append("file", file);
@@ -172,7 +185,15 @@ export const api = {
     handlers: {
       onStep?: (label: string) => void;
       onAgent?: (agent: string, agentLabel: string) => void;
-      onFinal?: (result: AskResult & { agent?: string; agent_label?: string }) => void;
+      onToken?: (text: string) => void;
+      onRestart?: () => void;
+      onFinal?: (
+        result: AskResult & {
+          agent?: string;
+          agent_label?: string;
+          quiz?: { quiz_id: string; questions: QuizQuestion[] };
+        },
+      ) => void;
       onError?: (status: number, detail: string) => void;
     },
   ): Promise<void> {
@@ -229,19 +250,29 @@ export const api = {
           const event: {
             event: string;
             label?: string;
+            token?: string;
             agent?: string;
             agent_label?: string;
             status?: number;
             detail?: string;
             response?: string;
-            sources?: Array<{ original_filename: string; excerpt: string }>;
+  sources?: Array<{
+    original_filename: string;
+    excerpt: string;
+    page?: number | null;
+  }>;
             conversation_name?: string;
             user_message_id?: string;
             assistant_message_id?: string;
+            quiz?: { quiz_id: string; questions: QuizQuestion[] };
           } = JSON.parse(line.slice(5).trim());
 
           if (event.event === "step" && event.label) {
             handlers.onStep?.(event.label);
+          } else if (event.event === "token" && typeof event.token === "string") {
+            handlers.onToken?.(event.token);
+          } else if (event.event === "restart") {
+            handlers.onRestart?.();
           } else if (event.event === "agent") {
             handlers.onAgent?.(event.agent ?? "", event.agent_label ?? "");
           } else if (event.event === "final") {
@@ -253,6 +284,7 @@ export const api = {
               assistant_message_id: event.assistant_message_id,
               agent: event.agent,
               agent_label: event.agent_label,
+              quiz: event.quiz,
             });
           } else if (event.event === "error") {
             handlers.onError?.(event.status ?? 500, event.detail ?? "Unknown error");
@@ -279,6 +311,10 @@ export const api = {
 
   fetchDocuments(workspaceId: string): Promise<WorkspaceDocument[]> {
     return request<WorkspaceDocument[]>(`/workspaces/${workspaceId}/documents`);
+  },
+
+  documentFileUrl(workspaceId: string, documentId: string): string {
+    return `${BASE_URL}/workspaces/${workspaceId}/documents/${documentId}/file`;
   },
 
   deleteDocument(workspaceId: string, documentId: string): Promise<void> {
@@ -356,11 +392,15 @@ export const api = {
   createMemoryEntry(
     workspaceId: string,
     content: string,
+    conversationId?: string,
   ): Promise<MemoryEntry> {
     return request<MemoryEntry>(`/workspaces/${workspaceId}/memory`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        content,
+        ...(conversationId ? { conversation_id: conversationId } : {}),
+      }),
     });
   },
 
@@ -505,6 +545,30 @@ export const api = {
         num_questions: numQuestions,
         difficulty,
       }),
+    });
+  },
+
+  fetchQuizzes(workspaceId: string): Promise<QuizSummary[]> {
+    return request<QuizSummary[]>(`/workspaces/${workspaceId}/quizzes`);
+  },
+
+  getQuiz(quizId: string): Promise<QuizDetail> {
+    return request<QuizDetail>(`/quizzes/${quizId}`);
+  },
+
+  deleteQuiz(quizId: string): Promise<void> {
+    return request<void>(`/quizzes/${quizId}`, { method: "DELETE" });
+  },
+
+  recordQuizAttempt(
+    quizId: string,
+    score: number,
+    total: number,
+  ): Promise<QuizDetail> {
+    return request<QuizDetail>(`/quizzes/${quizId}/attempts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ score, total }),
     });
   },
 };

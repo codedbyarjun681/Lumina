@@ -15,6 +15,7 @@ interface WorkspaceStore {
   ) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   setActiveWorkspace: (id: string | null) => void;
+  reorderWorkspaces: (ids: string[]) => Promise<void>;
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -71,5 +72,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setActiveWorkspace: (id) => {
     set({ activeWorkspaceId: id });
+  },
+
+  reorderWorkspaces: async (ids) => {
+    // Optimistic local reorder, persisted server-side
+    set((state) => ({
+      workspaces: [...state.workspaces].sort(
+        (a, b) => ids.indexOf(a.id) - ids.indexOf(b.id),
+      ),
+    }));
+    await api.reorderWorkspaces(ids);
   },
 }));

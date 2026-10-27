@@ -163,12 +163,14 @@ def retrieve_with_sources(
                 continue
             seen_files.add(saved)
             row = crud.get_document_by_saved_filename(db, workspace_id, saved)
+            page = chunk.metadata.get("page")
             sources.append(
                 {
                     "original_filename": (
                         row.original_filename if row is not None else saved
                     ),
                     "excerpt": chunk.page_content[:150],
+                    "page": page + 1 if isinstance(page, int) else None,
                 }
             )
     return docs, sources

@@ -29,9 +29,17 @@ def delete_memory(db: Session, memory_id: str) -> bool:
     return crud.delete_memory(db, memory_id)
 
 
-def get_prompt_memory(db: Session, workspace_id: str) -> list[str]:
+def get_prompt_memory(
+    db: Session, workspace_id: str, conversation_id: str | None = None
+) -> list[str]:
+    """Conversation-scoped entries first, then workspace-global ones, capped."""
     entries = crud.list_memory(db, workspace_id)
-    return [entry.content for entry in entries[:MEMORY_PROMPT_LIMIT]]
+    scoped = [
+        e for e in entries if conversation_id and e.conversation_id == conversation_id
+    ]
+    global_ = [e for e in entries if e.conversation_id is None]
+    combined = scoped + global_
+    return [entry.content for entry in combined[:MEMORY_PROMPT_LIMIT]]
 
 
 def save_extracted_facts(

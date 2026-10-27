@@ -9,6 +9,10 @@ class WorkspaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
 
+class WorkspaceReorder(BaseModel):
+    ids: list[str] = Field(min_length=1)
+
+
 class WorkspaceUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
@@ -88,6 +92,7 @@ class ConversationMessageOut(BaseModel):
 
 class MemoryCreate(BaseModel):
     content: str = Field(min_length=1)
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=36)
 
 
 class MemoryUpdate(BaseModel):
@@ -97,6 +102,7 @@ class MemoryUpdate(BaseModel):
 class MemoryOut(BaseModel):
     id: str
     workspace_id: str
+    conversation_id: str | None = None
     content: str
     source: str
     created_at: datetime

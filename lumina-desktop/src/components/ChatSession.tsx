@@ -32,6 +32,7 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
     const [loading, setLoading] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [agentSteps, setAgentSteps] = useState<string[]>([]);
+    const [streamText, setStreamText] = useState<string | null>(null);
 
     // Load persisted history on mount (component remounts per conversation
     // because App renders it with key={conversationId})
@@ -100,12 +101,20 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
 
       setLoading(true);
       setAgentSteps([]);
+      setStreamText(null);
       try {
         await api.askStream(question, activeWorkspace, activeConversation, {
           onStep: (label) => setAgentSteps((prev) => [...prev, label]),
           onAgent: () => undefined,
+          onToken: (text) => {
+            // First token hides the progress card; text now streams live
+            setAgentSteps([]);
+            setStreamText((prev) => (prev ?? "") + text);
+          },
+          onRestart: () => setStreamText(""),
           onFinal: (result) => {
             setAgentSteps([]);
+            setStreamText(null);
             if (result.user_message_id) {
               setMessages((prev) => {
                 const next = [...prev];
@@ -123,6 +132,7 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
               role: "assistant",
               content: result.response,
               agent: result.agent_label,
+              quiz: result.quiz,
               sources:
                 result.sources && result.sources.length > 0
                   ? result.sources
@@ -139,6 +149,7 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
           },
           onError: (status, detail) => {
             setAgentSteps([]);
+            setStreamText(null);
             pushMessage({
               role: "assistant",
               content:
@@ -150,6 +161,7 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
         });
       } catch (error) {
         setAgentSteps([]);
+        setStreamText(null);
         pushMessage({
           role: "assistant",
           content:
@@ -201,6 +213,57 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
         }
         setLoading(false);
         await sendQuestion(newContent);
+      })();
+    };
+
+    // Regenerate: truncate from the user prompt that produced this answer,
+    // then re-ask the same question (fresh answer, fresh sources).
+    const handleRegenerate = (assistantMessageId: string) => {
+      if (conversationId === null || loading) {
+        return;
+      }
+      const activeConversation = conversationId;
+      const assistantIndex = messages.findIndex(
+        (m) => m.id === assistantMessageId,
+      );
+      if (assistantIndex === -1) {
+        return;
+      }
+      let userIndex = -1;
+      let userMessage: Message | undefined;
+      for (let i = assistantIndex - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          userIndex = i;
+          userMessage = messages[i];
+          break;
+        }
+      }
+      if (userIndex === -1 || !userMessage?.id) {
+        pushMessage({
+          role: "assistant",
+          content:
+            "I can't regenerate that reply — its original prompt isn't available. Try sending the question again.",
+        });
+        return;
+      }
+      const question = userMessage.content;
+      setMessages((prev) => prev.slice(0, userIndex));
+      pushMessage({ role: "user", content: question });
+      setLoading(true);
+      void (async () => {
+        try {
+          await api.deleteMessagesFrom(activeConversation, userMessage.id!);
+        } catch {
+          setLoading(false);
+          pushMessage({
+            role: "assistant",
+            content:
+              "Could not update the conversation on the server — please reload.",
+          });
+          return;
+        }
+        setLoading(false);
+        await sendQuestion(question);
       })();
     };
 
@@ -311,7 +374,9 @@ const ChatSession = forwardRef<ChatSessionHandle, ChatSessionProps>(
             messages={messages}
             loading={loading}
             agentSteps={agentSteps}
+            streamText={streamText}
             onEditMessage={handleEditMessage}
+            onRegenerate={handleRegenerate}
           />
           <div className="chat-compose">
             <ModelPicker

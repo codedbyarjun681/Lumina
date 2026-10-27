@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWorkspaceStore } from "../store/workspaceStore";
 import { useConversationStore } from "../store/conversationStore";
 import { api } from "../services/api";
@@ -26,6 +26,8 @@ export default function Sidebar({
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
   const loadWorkspaces = useWorkspaceStore((s) => s.loadWorkspaces);
+  const reorderWorkspaces = useWorkspaceStore((s) => s.reorderWorkspaces);
+  const dragIndexRef = useRef<number | null>(null);
 
   const conversations = useConversationStore((s) => s.conversations);
   const activeConversationId = useConversationStore(
@@ -94,10 +96,33 @@ export default function Sidebar({
           </p>
         )}
         <ul className="sidebar-workspace-list">
-          {workspaces.map((workspace) => {
+          {workspaces.map((workspace, index) => {
             const isActive = workspace.id === activeWorkspaceId;
             return (
-              <li key={workspace.id}>
+              <li
+                key={workspace.id}
+                draggable
+                onDragStart={(e) => {
+                  dragIndexRef.current = index;
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const from = dragIndexRef.current;
+                  dragIndexRef.current = null;
+                  if (from === null || from === index) {
+                    return;
+                  }
+                  const ids = workspaces.map((w) => w.id);
+                  const [moved] = ids.splice(from, 1);
+                  ids.splice(index, 0, moved);
+                  void reorderWorkspaces(ids);
+                }}
+              >
                 <button
                   type="button"
                   className={
@@ -110,6 +135,9 @@ export default function Sidebar({
                   <span className="sidebar-workspace-accent" />
                   <span className="sidebar-workspace-name">
                     {workspace.name}
+                  </span>
+                  <span className="sidebar-workspace-grip" title="Drag to reorder">
+                    ⠿
                   </span>
                 </button>
 

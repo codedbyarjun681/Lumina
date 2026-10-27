@@ -400,3 +400,155 @@
 
 **Action taken:**
 - Implemented fully; build + lint clean
+
+## FEATURE-4 Quiz persistence (saved quizzes + attempt history)
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**Test results:**
+- New `quizzes` + `quiz_attempts` tables (via `create_all`), crud + `quiz_history_service`, routes: POST quiz now saves + returns `quiz_id`; `GET /workspaces/{id}/quizzes` (list w/ best/last/attempts); `GET/DELETE /quizzes/{id}`; `POST /quizzes/{id}/attempts`
+- Live: generate → saved with id ✓; list shows n/difficulty ✓; attempt 2/2 → best=2 last=2 ✓; attempt 1/2 → best=2 last=1 attempts=2 ✓; score>total → 400 ✓; delete → 204 then 404 (attempts cascade) ✓
+- Frontend: QuizPanel gained a "Saved quizzes" history section (retake/delete/best-score badges), generated quizzes auto-saved, panel completions record attempts
+
+**Issues found:**
+- None
+
+**Action taken:**
+- Implemented fully
+
+## FEATURE-5 Interactive quiz cards in chat
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**Test results:**
+- Quiz agent now persists every generated quiz and returns `quiz: {quiz_id, questions}` in the SSE final event (live: `@quiz two easy questions…` → final event carried quiz_id + 2 structured questions ✓)
+- New shared `QuizCard` component (pick→reveal green/red→next→score; Retake reshuffles; New Quiz hook); ChatArea renders QuizCard instead of markdown when a message carries `quiz`; completing a chat quiz records the attempt against the saved quiz (live: 2/2 → best=2 attempts=1 ✓); QuizPanel playing phase reuses QuizCard
+- Build + lint clean (fixed a prop-mutation bug — `setQuestions` on a prop — by moving shuffling into internal state)
+
+**Issues found:**
+- Initial QuizCard draft mutated props; caught by type-check review and fixed with internal shuffled state
+
+**Action taken:**
+- Implemented fully; test quizzes + conversations cleaned up afterwards
+
+## FEATURE-6 Regenerate reply button
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**Test results:**
+- Assistant bubbles now show ↻ on hover (next to copy); clicking truncates the conversation from the originating user prompt server-side (existing `DELETE …/messages/{id}` machinery), removes the stale tail locally, and re-asks the same question — fresh answer + fresh sources
+- Guards: disabled while loading; if the originating prompt isn't persisted (no id), a chat notice explains instead of failing silently
+- Build + lint clean
+
+**Issues found:**
+- None
+
+**Action taken:**
+- Implemented (frontend only — backend truncation + re-ask already existed)
+
+## FEATURE-7 Deeper citations (page numbers)
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**Test results:**
+- `retrieve_with_sources` now reads chunk `metadata["page"]` (set by PyPDFLoader during ingest) and emits 1-based `page` per source; DOCX/PPTX simply omit it
+- Live: `/ask` on the PDF workspace returned source `('cell_biology.pdf', page 1)` ✓
+- Frontend: sources cards show "cell_biology.pdf · p. 1"; types extended (`MessageSource.page?`)
+
+**Issues found:**
+- None
+
+**Action taken:**
+- Implemented fully
+
+## FEATURE-8 Document viewer panel
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**Test results:**
+- New route `GET /workspaces/{id}/documents/{doc_id}/file` → FileResponse (application/pdf for PDFs, octet-stream otherwise, Content-Disposition with original filename)
+- Live: fetched the workspace's PDF → 200, 1089 bytes, valid PDF ✓; bogus id → 404 ✓; missing-on-disk guarded
+- Frontend: Documents panel shows 👁 "View PDF" on PDFs → full-area preview overlay (iframe + close), non-PDFs keep delete-only
+- Build + lint clean
+
+**Issues found:**
+- None
+
+**Action taken:**
+- Implemented fully
+
+## FEATURE-9 Onboarding flow
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**Test results:**
+- Main area renders a "Welcome to Lumina" card (name input + Create + explanation) when the workspace list has loaded and is empty; creating from it lands the user straight in their new workspace
+- `bootstrapped` flag prevents the card flashing for users who DO have workspaces (waits for the first `loadWorkspaces`)
+- True-fresh-install verified by running an isolated backend (`LUMINA_DATA_DIR` override): `/workspaces` → `[]`, providers still seeded (5) — exactly the onboarding state
+
+**Issues found:**
+- First "fresh" test served real data — root cause: the legacy `backend/{data,chroma_db,documents}` migration leftovers still existed, so the new instance auto-migrated them (legacy migration working as designed). Deleted the leftovers as part of this feature (they were on the tech-debt list); fresh installs now genuinely start empty
+
+**Action taken:**
+- Implemented; bonus cleanup of 5MB legacy folders
+
+## FEATURE-10 Per-conversation memory scoping
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-06
+
+**Test results:**
+- `workspace_memory.conversation_id` nullable column + migration; `MemoryCreate`/`MemoryOut` extended
+- `get_prompt_memory(db, ws, conversation_id)` — scoped entries first, then workspace-global, capped at 10; used by both `/ask` and the agentic endpoint
+- Live: scoped memory created with conversation_id ✓; global with null ✓; foreign conversation_id → 400 ✓; resolution: target conversation sees [scoped, global], other conversations see global only ✓
+- Frontend: Memory panel "Only this conversation" checkbox (disabled without an active conversation); scoped entries show a "chat" badge
+
+**Issues found:**
+- None
+
+**Action taken:**
+- Implemented fully; test entries cleaned up
+
+## FEATURE-11 Drag-reorder workspaces
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-20
+
+**Test results:**
+- `workspaces.position` column + migration; `list_workspaces` ordered by position→created_at; `PUT /workspaces/reorder {ids}` assigns positions
+- Live: reorder persisted (positions 0/1 written, GET reflected new order); restored afterwards
+- Frontend: sidebar workspace rows are HTML5-draggable with a hover ⠿ grip; optimistic store reorder + server persist
+- Build + lint clean
+
+**Issues found (data hygiene, both fixed):**
+- The F1/F2 import test left a duplicate "ML Ops" workspace in the real DB — its cleanup command had read a wiped temp file and silently no-opped. Deleted the artifact; user's original workspace untouched
+- `delete_workspace` did NOT cascade — deleted workspaces left orphaned conversations/messages/documents/quizzes/memory rows (proven by earlier artifacts). Fixed: full cascade in `crud.delete_workspace`; live-verified zero orphans after deleting the duplicate (rows, Chroma collection, and documents folder all gone)
+
+**Action taken:**
+- Implemented fully + cascade-delete hardening
+
+## FEATURE Agentic Phase 2 — Reviewer grounding loop + token streaming
+
+**Status:** IMPLEMENTED
+**Date:** 2026-10-20
+
+**Test results:**
+- New `agents/reviewer.py`: strict LLM grounding verdict (JSON, fence-tolerant parse), **fail-open** on any reviewer failure; `LUMINA_FORCE_REVIEW_RETRY=1` env hook for end-to-end loop testing
+- Tutor pipeline upgraded: retrieve → draft (**streamed token-by-token**) → review → conditional revise (feedback injected into prompt, `restart` event clears the UI draft); hard cap `REVIEW_MAX_ROUNDS=2`; streaming falls back to a single call if `.stream` fails before the first token
+- LangGraph deliberately deferred (rationale documented in AGENTIC-PHASE2.md) — pipeline is graph-shaped plain orchestration; adopt LangGraph when ≥3 agents run per request
+- Live (normal): 63 token events; steps incl. "Reviewing answer for grounding…"; streamed text == final answer exactly; 0 restarts ✓
+- Live (forced retry): restart event fired once; "Revising (attempt 2) with reviewer feedback…" step; revised draft streamed and **byte-identical to the final response (204/204 chars)** ✓
+- Frontend: `onToken`/`onRestart` in api.askStream; ChatSession `streamText` state; ChatArea renders a live streaming bubble with pulsing caret (plain text while streaming, markdown at final); steps card hides when tokens start
+- Build + lint clean; test conversations cleaned up; server restored without the forced-retry env
+
+**Issues found:**
+- None (initial string-equality "mismatch" in the retry test was a test-harness splice artifact, disproven by exact comparison)
+
+**Action taken:**
+- Implemented fully; documented in AGENTIC-PHASE2.md

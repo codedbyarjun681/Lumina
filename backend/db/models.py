@@ -22,6 +22,7 @@ class Workspace(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    position: Mapped[int] = mapped_column(nullable=False, default=0)
 
     llm_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="ollama")
     llm_model: Mapped[str] = mapped_column(String(120), nullable=False, default="qwen3:8b")
@@ -86,6 +87,7 @@ class WorkspaceMemory(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
     workspace_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     content: Mapped[str] = mapped_column(String, nullable=False)
     source: Mapped[str] = mapped_column(String(10), nullable=False, default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

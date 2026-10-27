@@ -6,11 +6,13 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from db import crud
 from db.database import get_db
 from db.schemas import (
     WorkspaceCreate,
     WorkspaceLLMUpdate,
     WorkspaceOut,
+    WorkspaceReorder,
     WorkspaceUpdate,
 )
 from services import backup_service, workspace_service
@@ -68,6 +70,13 @@ def update_workspace_llm(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
         )
     return workspace
+
+
+@router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_workspaces(
+    data: WorkspaceReorder, db: Session = Depends(get_db)
+) -> None:
+    crud.reorder_workspaces(db, data.ids)
 
 
 @router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)

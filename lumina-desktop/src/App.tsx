@@ -164,6 +164,7 @@ export default function App() {
   const [newMemoryText, setNewMemoryText] = useState("");
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState("");
+  const [memoryScoped, setMemoryScoped] = useState(false);
 
   const [documentsPanelOpen, setDocumentsPanelOpen] = useState(false);
   const [quizPanelOpen, setQuizPanelOpen] = useState(false);
@@ -175,6 +176,9 @@ export default function App() {
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<string | null>(
     null,
   );
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState("");
 
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [apiKeysSet, setApiKeysSet] = useState<Record<string, boolean>>({});
@@ -197,6 +201,9 @@ export default function App() {
 
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
+  const [onboardingName, setOnboardingName] = useState("");
+  const [onboardingCreating, setOnboardingCreating] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatSessionRef = useRef<ChatSessionHandle>(null);
@@ -247,6 +254,16 @@ export default function App() {
         applyTheme("light", null);
       }
     })();
+  }, []);
+
+  // First-run bootstrap: know when the workspace list has actually loaded
+  // so the onboarding card doesn't flash for users who DO have workspaces
+  useEffect(() => {
+    void useWorkspaceStore
+      .getState()
+      .loadWorkspaces()
+      .catch(() => undefined)
+      .finally(() => setBootstrapped(true));
   }, []);
 
   // React to OS theme changes while in "system" mode
@@ -380,6 +397,20 @@ export default function App() {
     }
   };
 
+  const handleOnboardingCreate = async () => {
+    const name = onboardingName.trim();
+    if (name.length === 0 || onboardingCreating) {
+      return;
+    }
+    setOnboardingCreating(true);
+    try {
+      await createWorkspace(name);
+      setOnboardingName("");
+    } finally {
+      setOnboardingCreating(false);
+    }
+  };
+
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
@@ -406,7 +437,11 @@ export default function App() {
     if (activeWorkspaceId === null || content.length === 0) {
       return;
     }
-    await api.createMemoryEntry(activeWorkspaceId, content);
+    await api.createMemoryEntry(
+      activeWorkspaceId,
+      content,
+      memoryScoped ? (activeConversationId ?? undefined) : undefined,
+    );
     setNewMemoryText("");
     await reloadMemory(activeWorkspaceId);
   };
@@ -523,14 +558,54 @@ export default function App() {
             ☰
           </button>
         )}
-        <ChatSession
-          key={activeConversationId ?? "none"}
-          ref={chatSessionRef}
-          workspaceId={activeWorkspaceId}
-          conversationId={activeConversationId}
-          providerId={effectiveProviderId}
-          model={effectiveModel}
-        />
+        {bootstrapped && workspaces.length === 0 ? (
+          <div className="chat-empty onboarding">
+            <div className="chat-empty-rule" />
+            <p className="chat-empty-title">Welcome to Lumina</p>
+            <p className="chat-empty-subtitle">
+              Your personal knowledge workspace — upload documents, ask
+              questions grounded in them, take quizzes, and let Lumina learn
+              how you study.
+            </p>
+            <div className="workspace-row-line" style={{ maxWidth: 380 }}>
+              <input
+                type="text"
+                className="field"
+                placeholder="Name your first workspace…"
+                value={onboardingName}
+                onChange={(e) => setOnboardingName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    void handleOnboardingCreate();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => void handleOnboardingCreate()}
+                disabled={onboardingName.trim().length === 0 || onboardingCreating}
+              >
+                Create
+              </button>
+            </div>
+            <p className="panel-muted" style={{ maxWidth: 420 }}>
+              A workspace is a private knowledge bubble — its documents,
+              conversations, and memory stay isolated from every other
+              workspace.
+            </p>
+            <div className="chat-empty-rule" />
+          </div>
+        ) : (
+          <ChatSession
+            key={activeConversationId ?? "none"}
+            ref={chatSessionRef}
+            workspaceId={activeWorkspaceId}
+            conversationId={activeConversationId}
+            providerId={effectiveProviderId}
+            model={effectiveModel}
+          />
+        )}
       </main>
 
       <input
@@ -877,14 +952,36 @@ export default function App() {
                           </button>
                         </span>
                       ) : (
-                        <button
-                          type="button"
-                          className="sidebar-icon-btn"
-                          title="Delete document"
-                          onClick={() => setConfirmDeleteDocId(doc.id)}
-                        >
-                          ✕
-                        </button>
+                        <span style={{ display: "inline-flex", gap: 2 }}>
+                          {doc.original_filename.toLowerCase().endsWith(
+                            ".pdf",
+                          ) && (
+                            <button
+                              type="button"
+                              className="sidebar-icon-btn"
+                              title="View PDF"
+                              onClick={() => {
+                                setPreviewUrl(
+                                  api.documentFileUrl(
+                                    activeWorkspaceId ?? "",
+                                    doc.id,
+                                  ),
+                                );
+                                setPreviewName(doc.original_filename);
+                              }}
+                            >
+                              👁
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="sidebar-icon-btn"
+                            title="Delete document"
+                            onClick={() => setConfirmDeleteDocId(doc.id)}
+                          >
+                            ✕
+                          </button>
+                        </span>
                       )}
                     </div>
                   ))
@@ -972,6 +1069,26 @@ export default function App() {
               Add Memory
             </button>
           </div>
+          <label
+            className="memory-scope-toggle"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              marginTop: 8,
+              fontSize: 12.5,
+              color: activeConversationId ? "var(--ink-soft)" : "var(--ink-faint)",
+              cursor: activeConversationId ? "pointer" : "not-allowed",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={memoryScoped}
+              disabled={activeConversationId === null}
+              onChange={(e) => setMemoryScoped(e.target.checked)}
+            />
+            Only this conversation
+          </label>
         </div>
 
         <div className="panel-section">
@@ -1024,6 +1141,9 @@ export default function App() {
                 >
                   {entry.source}
                 </span>
+                {entry.conversation_id !== null && (
+                  <span className="memory-badge memory-badge--auto">chat</span>
+                )}
                 <button
                   type="button"
                   className="sidebar-icon-btn"
@@ -1037,6 +1157,37 @@ export default function App() {
           ))}
         </div>
       </SidePanel>
+
+      {previewUrl !== null && (
+        <div
+          className="sidepanel-overlay sidepanel-overlay--open"
+          onClick={() => setPreviewUrl(null)}
+        >
+          <div
+            className="doc-preview"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label={previewName}
+          >
+            <header className="sidepanel-header">
+              <h2 className="sidepanel-title">{previewName}</h2>
+              <button
+                type="button"
+                className="sidepanel-close"
+                onClick={() => setPreviewUrl(null)}
+                aria-label="Close preview"
+              >
+                ✕
+              </button>
+            </header>
+            <iframe
+              src={previewUrl}
+              className="doc-preview-frame"
+              title={previewName}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

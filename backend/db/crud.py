@@ -49,8 +49,22 @@ def get_workspace(db: Session, workspace_id: str) -> Workspace | None:
 
 
 def list_workspaces(db: Session) -> Sequence[Workspace]:
-    stmt = select(Workspace).order_by(Workspace.created_at.asc())
+    stmt = (
+        select(Workspace)
+        .order_by(Workspace.position.asc())
+        .order_by(Workspace.created_at.asc())
+    )
     return db.execute(stmt).scalars().all()
+
+
+def reorder_workspaces(db: Session, ordered_ids: list[str]) -> None:
+    from db.models import Workspace as WorkspaceModel
+
+    for index, workspace_id in enumerate(ordered_ids):
+        workspace = db.get(WorkspaceModel, workspace_id)
+        if workspace is not None:
+            workspace.position = index
+    db.commit()
 
 
 def update_workspace(
@@ -79,9 +93,29 @@ def update_workspace_llm(
 
 
 def delete_workspace(db: Session, workspace_id: str) -> bool:
+    """Delete a workspace and cascade-clean all dependent rows:
+    conversations + messages, documents, quizzes + attempts, memory."""
     workspace = get_workspace(db, workspace_id)
     if workspace is None:
         return False
+
+    conversations = list_conversations(db, workspace_id)
+    for conversation in conversations:
+        for message in list_messages(db, conversation.id):
+            db.delete(message)
+        db.delete(conversation)
+
+    for document in list_documents(db, workspace_id):
+        db.delete(document)
+
+    for quiz in list_quizzes(db, workspace_id):
+        for attempt in list_attempts(db, quiz.id):
+            db.delete(attempt)
+        db.delete(quiz)
+
+    for entry in list_memory(db, workspace_id):
+        db.delete(entry)
+
     db.delete(workspace)
     db.commit()
     return True
@@ -350,6 +384,7 @@ def create_memory(
 ) -> WorkspaceMemory:
     entry = WorkspaceMemory(
         workspace_id=workspace_id,
+        conversation_id=data.conversation_id,
         content=data.content.strip(),
         source=source,
     )

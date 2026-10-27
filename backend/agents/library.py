@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
+from agents import reviewer as reviewer_agent
 from rag import _get_llm, _llm_text, build_tutor_prompt, retrieve_with_sources
 
 
@@ -34,6 +35,28 @@ class Agent:
     handle: Callable[[AgentContext], dict]
 
 
+def _stream_llm_text(llm, prompt: str, provider: str, model: str, emit) -> str:
+    """Invoke the LLM token-by-token, emitting {"event":"token"} per chunk.
+    Falls back to a single non-streaming call if streaming breaks before the
+    first token. Returns the full text."""
+    pieces: list[str] = []
+    try:
+        for chunk in llm.stream(prompt):
+            token = chunk.content if hasattr(chunk, "content") else str(chunk)
+            if not token:
+                continue
+            pieces.append(token)
+            emit({"event": "token", "text": token})
+    except Exception as e:
+        if not pieces:
+            # Nothing streamed yet — safe to fall back to a plain call
+            text = _llm_text(llm, prompt, provider, model)
+            emit({"event": "token", "text": text})
+            return text
+        raise  # mid-stream failure: surface it (route turns it into an error event)
+    return "".join(pieces)
+
+
 # ——— Teacher agent ———
 
 
@@ -46,12 +69,51 @@ def _teacher_run(ctx: AgentContext) -> dict:
         else "No relevant documents found."
     )
 
-    ctx.emit({"event": "step", "label": "Composing your answer…"})
-    prompt = build_tutor_prompt(
-        ctx.question, context, ctx.memory_entries, ctx.conversation_history
-    )
     llm = _get_llm(ctx.provider, ctx.model, ctx.api_key)
-    answer = _llm_text(llm, prompt, ctx.provider, ctx.model)
+    feedback: list[str] | None = None
+
+    for round_index in range(1, reviewer_agent.REVIEW_MAX_ROUNDS + 1):
+        if round_index == 1:
+            ctx.emit({"event": "step", "label": "Composing your answer…"})
+        else:
+            # Clear the streamed draft before the revision begins
+            ctx.emit({"event": "restart"})
+            ctx.emit(
+                {
+                    "event": "step",
+                    "label": f"Revising (attempt {round_index}) with reviewer feedback…",
+                }
+            )
+
+        prompt = build_tutor_prompt(
+            ctx.question, context, ctx.memory_entries, ctx.conversation_history
+        )
+        if feedback:
+            prompt += (
+                "\n\nA reviewer flagged issues with your previous attempt — fix them:\n"
+                + "\n".join(f"- {issue}" for issue in feedback)
+                + "\n\nAnswer again:\n"
+            )
+        answer = _stream_llm_text(llm, prompt, ctx.provider, ctx.model, ctx.emit)
+
+        if round_index < reviewer_agent.REVIEW_MAX_ROUNDS:
+            ctx.emit({"event": "step", "label": "Reviewing answer for grounding…"})
+            verdict = reviewer_agent.review_answer(
+                ctx.question,
+                context,
+                answer,
+                ctx.provider,
+                ctx.model,
+                ctx.api_key,
+                round_index,
+            )
+            if verdict["verdict"] == "grounded":
+                break
+            feedback = verdict["issues"] or ["The draft was not grounded in the context."]
+        else:
+            # Last round: accept whatever we have (guardrail against loops)
+            break
+
     return {"answer": answer, "sources": sources}
 
 

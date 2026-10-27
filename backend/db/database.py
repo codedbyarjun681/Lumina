@@ -51,6 +51,13 @@ def _run_lightweight_migrations() -> None:
                     "VARCHAR(120) NOT NULL DEFAULT 'qwen3:8b'"
                 )
             )
+        if "position" not in existing_columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE workspaces ADD COLUMN position "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
+            )
 
     if "conversations" in inspector.get_table_names():
         conv_columns = {
@@ -69,6 +76,19 @@ def _run_lightweight_migrations() -> None:
                     text(
                         "ALTER TABLE conversations ADD COLUMN llm_provider "
                         "VARCHAR(50)"
+                    )
+                )
+
+    if "workspace_memory" in inspector.get_table_names():
+        memory_columns = {
+            col["name"] for col in inspector.get_columns("workspace_memory")
+        }
+        with engine.begin() as conn:
+            if "conversation_id" not in memory_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE workspace_memory ADD COLUMN conversation_id "
+                        "VARCHAR(36)"
                     )
                 )
 

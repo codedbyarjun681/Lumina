@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
+from db import crud
 from db.database import get_db
 from db.schemas import DocumentOut, DocumentSearchResult
+from paths import DOCUMENTS_ROOT
 from services import document_service, workspace_service
 
 router = APIRouter(tags=["documents"])
@@ -45,6 +48,34 @@ async def delete_document(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/documents/{document_id}/file",
+    response_class=FileResponse,
+)
+def get_document_file(
+    workspace_id: str, document_id: str, db: Session = Depends(get_db)
+) -> FileResponse:
+    _require_workspace(db, workspace_id)
+    doc = crud.get_document(db, document_id)
+    if doc is None or doc.workspace_id != workspace_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+    path = DOCUMENTS_ROOT / workspace_id / doc.saved_filename
+    if not path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The file is missing from disk",
+        )
+    return FileResponse(
+        path,
+        media_type="application/pdf"
+        if doc.original_filename.lower().endswith(".pdf")
+        else "application/octet-stream",
+        filename=doc.original_filename,
+    )
 
 
 @router.get(

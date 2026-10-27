@@ -100,7 +100,9 @@ async def agent_ask(
         ConversationMessageCreate(role="user", content=request.question),
     )
 
-    memory_entries = memory_service.get_prompt_memory(db, workspace.id)
+    memory_entries = memory_service.get_prompt_memory(
+        db, workspace.id, conversation.id
+    )
     history = conversation_service.get_recent_history(db, conversation.id, limit=6)
 
     queue: asyncio.Queue = asyncio.Queue()
@@ -181,6 +183,8 @@ async def agent_ask(
             "user_message_id": user_message.id,
             "assistant_message_id": assistant_message.id,
         }
+        if result.get("quiz"):
+            final_payload["quiz"] = result["quiz"]
         if conversation_name:
             final_payload["conversation_name"] = conversation_name
 

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import QuizCard from "./QuizCard";
+import { api } from "../services/api";
 import type { Message, MessageSource } from "../types/Message";
 
 function SourcesSection({ sources }: { sources: MessageSource[] }) {
@@ -17,7 +19,12 @@ function SourcesSection({ sources }: { sources: MessageSource[] }) {
         <div className="sources-list">
           {sources.map((s, i) => (
             <div key={i} className="source-card">
-              <p className="source-filename">{s.original_filename}</p>
+              <p className="source-filename">
+                {s.original_filename}
+                {typeof s.page === "number" && (
+                  <span className="source-page"> · p. {s.page}</span>
+                )}
+              </p>
               <p className="source-excerpt">{s.excerpt}…</p>
             </div>
           ))}
@@ -31,14 +38,18 @@ interface ChatAreaProps {
   messages: Message[];
   loading: boolean;
   agentSteps: string[];
+  streamText: string | null;
   onEditMessage: (messageId: string, newContent: string) => void;
+  onRegenerate: (assistantMessageId: string) => void;
 }
 
 export default function ChatArea({
   messages,
   loading,
   agentSteps,
+  streamText,
   onEditMessage,
+  onRegenerate,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -173,7 +184,17 @@ export default function ChatArea({
                   {!isUser && message.agent && (
                     <span className="agent-badge">{message.agent}</span>
                   )}
-                  {isUser ? (
+                  {!isUser && message.quiz ? (
+                    <QuizCard
+                      questions={message.quiz.questions}
+                      compact
+                      onComplete={(score, total) =>
+                        void api
+                          .recordQuizAttempt(message.quiz?.quiz_id ?? "", score, total)
+                          .catch(() => undefined)
+                      }
+                    />
+                  ) : isUser ? (
                     message.content
                   ) : (
                     <ReactMarkdown>{message.content}</ReactMarkdown>
@@ -187,6 +208,15 @@ export default function ChatArea({
                     <button
                       type="button"
                       className="chat-action-btn"
+                      title="Regenerate reply"
+                      disabled={!message.id || loading}
+                      onClick={() => message.id && onRegenerate(message.id)}
+                    >
+                      ↻
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-action-btn"
                       title="Copy answer"
                       onClick={() => void handleCopy(index, message.content)}
                     >
@@ -197,6 +227,14 @@ export default function ChatArea({
               </div>
             );
           })}
+          {streamText !== null && streamText.length > 0 && (
+            <div className="chat-row chat-row--assistant">
+              <div className="chat-bubble chat-bubble--assistant chat-bubble--streaming">
+                {streamText}
+                <span className="stream-caret" />
+              </div>
+            </div>
+          )}
           {loading && agentSteps.length > 0 && (
             <div className="chat-row chat-row--assistant">
               <div className="chat-bubble chat-bubble--assistant agent-progress">

@@ -121,7 +121,9 @@ async def ask_question(
         ConversationMessageCreate(role="user", content=request.question),
     )
 
-    memory_entries = memory_service.get_prompt_memory(db, workspace.id)
+    memory_entries = memory_service.get_prompt_memory(
+        db, workspace.id, conversation.id
+    )
     history = conversation_service.get_recent_history(db, conversation.id, limit=6)
 
     rag_result = await asyncio.to_thread(

@@ -355,6 +355,19 @@ body {
   white-space: nowrap;
 }
 
+.sidebar-workspace-grip {
+  margin-left: auto;
+  opacity: 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+  cursor: grab;
+  transition: opacity 160ms ease;
+}
+
+.sidebar-workspace:hover .sidebar-workspace-grip {
+  opacity: 1;
+}
+
 .sidebar-footer {
   display: flex;
   flex-direction: column;
@@ -445,6 +458,22 @@ body {
 
 .chat-row--assistant {
   justify-content: flex-start;
+}
+
+/* ——— Token streaming ——— */
+
+.chat-bubble--streaming {
+  white-space: pre-wrap;
+}
+
+.stream-caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
 }
 
 /* ——— Agentic progress & badges ——— */
@@ -1342,6 +1371,16 @@ body {
   white-space: nowrap;
 }
 
+/* ——— Quiz card (shared: chat + panel) ——— */
+
+.quiz-card {
+  width: 100%;
+}
+
+.quiz-card--done {
+  text-align: center;
+}
+
 /* ——— Quiz panel ——— */
 
 .quiz-range {
@@ -1487,6 +1526,11 @@ body {
   color: var(--ink);
 }
 
+.source-page {
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
 .source-excerpt {
   margin: 0;
   font-size: 11.5px;
@@ -1577,6 +1621,26 @@ body {
   background: var(--accent-soft);
   font-size: 12.5px;
   color: var(--ink);
+}
+
+/* ——— Document preview ——— */
+
+.doc-preview {
+  position: absolute;
+  inset: 8vh 8vw;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(59, 54, 47, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.doc-preview-frame {
+  flex: 1;
+  border: none;
+  background: var(--bg-sunken);
 }
 
 /* ——— Scrollbars ——— */
